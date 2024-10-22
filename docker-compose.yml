@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  book-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      - PORT=8082
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - CASSANDRA_CONTACT_POINTS=cassandra:9042
+      - ELASTICSEARCH_NODE=http://elasticsearch:9200
+    depends_on:
+      cassandra:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - microservices-network
+  rabbitmq:
+    image: rabbitmq:management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  cassandra:
+    image: cassandra:latest
+    container_name: cassandra
+    ports:
+      - "9042:9042"
+    environment:
+      - CASSANDRA_CLUSTER_NAME=BookStoreCluster
+      - CASSANDRA_DC=dc1
+    networks:
+      - microservices-network
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh cassandra 9042 -e 'describe keyspaces'"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.10.1
+    container_name: elasticsearch
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - ELASTIC_PASSWORD=your_password_here
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  kibana:
+      image: docker.elastic.co/kibana/kibana:7.10.1
+      container_name: kibana
+      ports:
+        - "5601:5601"
+      environment:
+        - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+        - ELASTICSEARCH_USERNAME=elastic
+        - ELASTICSEARCH_PASSWORD=your_password_here
+      networks:
+        - microservices-network
+volumes:
+  cassandra-data:
+  esdata:
+
+networks:
+  microservices-network:
+    driver: bridge
